@@ -9,17 +9,11 @@ import java.util.EnumSet;
 public class AnyaFollowGoal extends Goal {
 
     private final AnyaEntity anya;
-    private final double followDist;
-    private final double stayRadius;
+    private final double stopDistance = 2.2;
+    private final double slowDistance = 4.0;
 
     public AnyaFollowGoal(AnyaEntity anya) {
-        this(anya, 3.0, 3.0);
-    }
-
-    public AnyaFollowGoal(AnyaEntity anya, double followDist, double stayRadius) {
         this.anya = anya;
-        this.followDist = followDist;
-        this.stayRadius = stayRadius;
         this.setFlags(EnumSet.of(Goal.Flag.MOVE));
     }
 
@@ -38,45 +32,55 @@ public class AnyaFollowGoal extends Goal {
         Player player = findPlayer();
 
         if (player == null) {
+            anya.setDeltaMovement(anya.getDeltaMovement().scale(0.8));
             return;
         }
 
-        Vec3 target = player.position().add(0.0, 1.2, 0.0);
-
+        Vec3 target = player.position().add(0.0, 1.3, 0.0);
         double distance = anya.position().distanceTo(target);
 
-        if (distance <= followDist) {
+        // Если игрок улетел слишком далеко
+        if (distance > 48.0) {
+            anya.setDeltaMovement(Vec3.ZERO);
             return;
         }
 
-        Vec3 direction = target
-                .subtract(anya.position())
-                .normalize()
-                .scale(0.20);
+        // Плавный расчет коэффициента скорости (никаких резких скачков 0 -> 0.2)
+        double speedFactor = 0.0;
+        if (distance > slowDistance) {
+            speedFactor = 1.0;
+        } else if (distance > stopDistance) {
+            // Линейное плавное торможение при приближении к игроку
+            speedFactor = (distance - stopDistance) / (slowDistance - stopDistance);
+        }
 
-        Vec3 movement = anya.getDeltaMovement()
-                .scale(0.6)
-                .add(direction);
+        double totalPenaltyPercent = anya.gifts.calculateEncumbrancePenalty();
+        double baseSpeed = 0.18;
+        double currentSpeed = baseSpeed * (1.0 - (totalPenaltyPercent / 100.0)) * speedFactor;
 
+        Vec3 direction = target.subtract(anya.position()).normalize().scale(currentSpeed);
+
+        // Мягкое удержание инерции
+        Vec3 movement = anya.getDeltaMovement().scale(0.75).add(direction);
         anya.setDeltaMovement(movement);
 
+        // Плавный расчет взгляда на игрока
         double dx = target.x - anya.getX();
         double dz = target.z - anya.getZ();
 
-        float yaw = (float)
-                (Math.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0F;
-
-        anya.setYRot(yaw);
-        anya.setYHeadRot(yaw);
+        if (dx * dx + dz * dz > 0.001) {
+            float targetYaw = (float) (Math.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0F;
+            anya.setYRot(targetYaw);
+            anya.setYHeadRot(targetYaw);
+        }
     }
 
     private Player findPlayer() {
         for (Player player : anya.level().players()) {
-            if (player.getName().getString().equals("legoman")) {
+            if (player.getName().getString().equalsIgnoreCase("legoman")) {
                 return player;
             }
         }
-
         return null;
     }
 }

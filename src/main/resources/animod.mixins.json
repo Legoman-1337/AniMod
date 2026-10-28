@@ -1,14 +1,8 @@
 {
-	"required": true,
-	"package": "net.legoman.animod.mixin",
-	"compatibilityLevel": "JAVA_17",
-	"mixins": [
-		"ExampleMixin"
-	],
-	"injectors": {
-		"defaultRequire": 1
-	},
-	"overwrites": {
-		"requireAnnotations": true
-	}
+  "required": true,
+  "package": "net.legoman.animod.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": ["AnyaSummonMixin"],
+  "injectors": {"defaultRequire": 1},
+  "overwrites": {"requireAnnotations": true}
 }

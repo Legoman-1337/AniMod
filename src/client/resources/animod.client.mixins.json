@@ -1,14 +1,13 @@
 {
-	"required": true,
+	"required": false,
 	"package": "net.legoman.animod.client.mixin",
 	"compatibilityLevel": "JAVA_17",
 	"client": [
-		"ExampleClientMixin"
+		"ExampleClientMixin",
+		"AbstractClientPlayerMixin",
+		"GameRendererAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1
-	},
-	"overwrites": {
-		"requireAnnotations": true
 	}
 }

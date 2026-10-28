@@ -1,7 +1,9 @@
 package net.legoman.animod.client;
 
 import net.legoman.animod.AniMod;
+import net.legoman.animod.AniSaveData;
 import net.legoman.animod.AnyaEntity;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import software.bernie.geckolib.model.GeoModel;
 
@@ -65,6 +67,13 @@ public class AnyaModel extends GeoModel<AnyaEntity> {
     public ResourceLocation getTextureResource(AnyaEntity anya) {
         if (anya.isReacting()) {
             return anya.getReactionType() == 1 ? ABUSE : COMPLIMENT;
+        }
+
+        // Проверка сюжетной стадии (если одиночная игра)
+        if (Minecraft.getInstance().level != null && Minecraft.getInstance().getSingleplayerServer() != null) {
+            AniSaveData data = AniSaveData.getServerState(Minecraft.getInstance().getSingleplayerServer().overworld());
+            if (data.storyStateId == 6 || data.storyStateId == 4) return HORROR;
+            if (data.storyStateId == 3) return OFFENDED;
         }
 
         int karma = AniMod.getKarma();

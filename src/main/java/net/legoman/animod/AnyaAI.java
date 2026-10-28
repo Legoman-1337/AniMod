@@ -7,6 +7,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -105,7 +107,7 @@ public class AnyaAI {
         final int finalKarma = Math.max(0, Math.min(100, KarmaManager.get()));
         final int finalBand = AnyaAIPrompts.getKarmaBand(finalKarma);
         final String finalInstruction = AnyaAIPrompts.getInstruction(finalKarma);
-        final String finalNameColor = AniMod.getTraitColor();
+        final String finalNameColorName = AniMod.getTraitColorName();
 
         updateContextCache(player);
         final float finalHealth = cachedHealth;
@@ -123,7 +125,7 @@ public class AnyaAI {
 
         player.serverLevel().getServer().execute(()->{
             if(player.isRemoved()) return;
-            player.serverLevel().getServer().getCommands().performPrefixedCommand(player.createCommandSourceStack(),"tellraw legoman {\"text\":\""+finalNameColor+"[Аня] §7Думает...\"}");
+            sendAnyaMessage(player, finalNameColorName, "gray", "\u0414\u0443\u043C\u0430\u0435\u0442...");
         });
 
         CompletableFuture.runAsync(()->{
@@ -157,18 +159,18 @@ public class AnyaAI {
                     chatHistory.pollFirst();
                 }
 
-                final String safe = KoboldClient.escapeJson(response);
+        final String safe = response;
 
                 player.serverLevel().getServer().execute(()->{
                     if(player.isRemoved()) return;
-                    player.serverLevel().getServer().getCommands().performPrefixedCommand(player.createCommandSourceStack(),"tellraw legoman {\"text\":\""+finalNameColor+"[Аня] §f"+safe+"\"}");
+                    sendAnyaMessage(player, finalNameColorName, "white", safe);
                 });
             }catch(Exception e){
                 LOGGER.error("[DIAGNOSTIC] Exception in async thread: {}", e.getMessage(), e);
                 player.serverLevel().getServer().execute(()->{
                     if(player.isRemoved()) return;
                     String safe = KoboldClient.escapeJson(AnyaAIFallback.get(finalKarma,finalUserText,finalItemName,finalMobsInfo,finalTimeText,finalBiomeName,finalHealth,lastUniqueResponse));
-                    player.serverLevel().getServer().getCommands().performPrefixedCommand(player.createCommandSourceStack(),"tellraw legoman {\"text\":\""+finalNameColor+"[Аня] §f"+safe+"\"}");
+                    sendAnyaMessage(player, finalNameColorName, "white", AnyaAIFallback.get(finalKarma,finalUserText,finalItemName,finalMobsInfo,finalTimeText,finalBiomeName,finalHealth,lastUniqueResponse));
                 });
             }finally{
                 generating.set(false);
@@ -259,5 +261,25 @@ public class AnyaAI {
     private static boolean isIgnoredMob(String name){
         String n = name.toLowerCase(Locale.ROOT);
         return n.equals("треска") || n.equals("спрут") || n.equals("лосось") || n.equals("тропическая рыба") || n.equals("иглобрюх");
+    }
+
+    private static void sendAnyaMessage(ServerPlayer player, String nameColorName, String textColorName, String text) {
+        if (player.isRemoved()) return;
+        player.sendSystemMessage(
+            Component.literal("[\u0410\u043D\u044F] ").withStyle(getChatColor(nameColorName))
+                .append(Component.literal(text).withStyle(getChatColor(textColorName)))
+        );
+    }
+
+    private static ChatFormatting getChatColor(String name) {
+        switch (name) {
+            case "dark_red": return ChatFormatting.DARK_RED;
+            case "light_purple": return ChatFormatting.LIGHT_PURPLE;
+            case "gold": return ChatFormatting.GOLD;
+            case "green": return ChatFormatting.GREEN;
+            case "red": return ChatFormatting.RED;
+            case "gray": return ChatFormatting.GRAY;
+            default: return ChatFormatting.WHITE;
+        }
     }
 }
