@@ -124,19 +124,19 @@ public class AnyaEntity extends Ghast implements GeoEntity {
         }
 
         if (!level().isClientSide) {
-            // Реалистичные слёзы: деликатные прозрачные капли воды, формирующиеся у глаз и стекающие вниз
+            // Реалистичные слёзы: капли воды формируются строго на уровне глаз (Y + 0.32)
             if (isCryingStage() && this.level() instanceof ServerLevel sl) {
                 if (this.tickCount % 6 == 0) {
-                    double offsetX = (this.random.nextDouble() - 0.5) * 0.22;
-                    double offsetZ = (this.random.nextDouble() - 0.5) * 0.22;
+                    double offsetX = (this.random.nextDouble() - 0.5) * 0.16;
+                    double offsetZ = (this.random.nextDouble() - 0.5) * 0.16;
                     sl.sendParticles(ParticleTypes.DRIPPING_WATER,
-                            this.getX() + offsetX, this.getY() + 0.65, this.getZ() + offsetZ, 1, 0.01, 0.01, 0.01, 0.0);
+                            this.getX() + offsetX, this.getY() + 0.32, this.getZ() + offsetZ, 1, 0.01, 0.01, 0.01, 0.0);
                 }
                 if (this.tickCount % 10 == 0) {
-                    double offsetX = (this.random.nextDouble() - 0.5) * 0.22;
-                    double offsetZ = (this.random.nextDouble() - 0.5) * 0.22;
+                    double offsetX = (this.random.nextDouble() - 0.5) * 0.16;
+                    double offsetZ = (this.random.nextDouble() - 0.5) * 0.16;
                     sl.sendParticles(ParticleTypes.FALLING_WATER,
-                            this.getX() + offsetX, this.getY() + 0.60, this.getZ() + offsetZ, 1, 0.01, 0.01, 0.01, 0.01);
+                            this.getX() + offsetX, this.getY() + 0.28, this.getZ() + offsetZ, 1, 0.01, 0.01, 0.01, 0.01);
                 }
             }
 
@@ -235,7 +235,6 @@ public class AnyaEntity extends Ghast implements GeoEntity {
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
         if (!this.level().isClientSide && hand == InteractionHand.MAIN_HAND) {
 
-            // СЮЖЕТНАЯ СТАДИЯ СЛЁЗ: звук клика убран
             if (this.level() instanceof ServerLevel sl && AniSaveData.getServerState(sl).storyStateId == 3) {
                 player.sendSystemMessage(Component.literal("§8§o*Аня закрыла лицо руками и тихо всхлипывает... не трогай её сейчас*"));
                 return InteractionResult.SUCCESS;

@@ -26,11 +26,13 @@ public class AniSaveData extends SavedData {
     public int gapDaysLeft = 0;
     public long lastDayNumber = 0;
     public boolean diamondT3Completed = false;
+
     // === СЮЖЕТНАЯ СИСТЕМА ===
     public int storyDay = 1;
     public int storyStateId = 0;
     public double anyaEventHp = 20.0;
     public boolean bossDefeated = false;
+    public boolean insomniaNightActive = false;
 
     private final List<AnyaLocation> anyaLocations = new ArrayList<>();
 
@@ -131,11 +133,12 @@ public class AniSaveData extends SavedData {
             ListTag list = tag.getList("storyJournal", 8);
             for (int i = 0; i < list.size(); i++) data.storyJournal.add(list.getString(i));
         }
-        // Загрузка сюжета
+
         data.storyDay = tag.contains("storyDay") ? Math.max(1, tag.getInt("storyDay")) : 1;
         data.storyStateId = tag.getInt("storyStateId");
         data.anyaEventHp = tag.contains("anyaEventHp") ? tag.getDouble("anyaEventHp") : 20.0;
         data.bossDefeated = tag.getBoolean("bossDefeated");
+        data.insomniaNightActive = tag.getBoolean("insomniaNightActive");
 
         data.questItem = tag.getString("questItem");
         data.questTarget = Math.max(0, tag.getInt("questTarget"));
@@ -171,11 +174,12 @@ public class AniSaveData extends SavedData {
         tag.putBoolean("migrated", migrated);
         tag.putString("worldUuid", worldUuid);
         tag.putString("activeAnyaUuid", activeAnyaUuid != null ? activeAnyaUuid : "");
-        // Сохранение сюжета
+
         tag.putInt("storyDay", storyDay);
         tag.putInt("storyStateId", storyStateId);
         tag.putDouble("anyaEventHp", anyaEventHp);
         tag.putBoolean("bossDefeated", bossDefeated);
+        tag.putBoolean("insomniaNightActive", insomniaNightActive);
 
         ListTag listMemory = new ListTag();
         for (String fact : memory) listMemory.add(StringTag.valueOf(fact));
@@ -233,6 +237,7 @@ public class AniSaveData extends SavedData {
         return level.getServer().overworld().getDataStorage().computeIfAbsent(
                 AniSaveData::load, AniSaveData::new, "animod_state");
     }
+
     public net.legoman.animod.story.StoryState getStoryState() {
         return net.legoman.animod.story.StoryState.fromId(this.storyStateId);
     }

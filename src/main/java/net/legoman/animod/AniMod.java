@@ -3,10 +3,13 @@ package net.legoman.animod;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
@@ -28,6 +31,8 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
@@ -45,6 +50,7 @@ public class AniMod implements ModInitializer {
     public static final ResourceLocation TELEPORT_PROMPT_PACKET = new ResourceLocation("animod", "teleport_prompt");
     public static final ResourceLocation TELEPORT_CONFIRM_PACKET = new ResourceLocation("animod", "teleport_confirm");
     public static final ResourceLocation STORY_CUTSCENE_PACKET = new ResourceLocation("animod", "story_cutscene");
+    public static final ResourceLocation INSOMNIA_SKY_PACKET = new ResourceLocation("animod", "insomnia_sky");
 
     private static final Map<UUID, PendingTeleport> pendingTeleports = new HashMap<>();
     private static final ThreadLocal<SummonedAnya> summonedAnya = new ThreadLocal<>();
@@ -63,7 +69,6 @@ public class AniMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        // Регистрация звуков в реестре Minecraft
         ModSounds.register();
 
         FabricDefaultAttributeRegistry.register(AnyaEntity.ANYA, Mob.createMobAttributes());
@@ -72,6 +77,9 @@ public class AniMod implements ModInitializer {
         ServerEntityEvents.ENTITY_LOAD.register((entity, level) -> {
             if (entity instanceof AnyaEntity anya) {
                 AniSaveData.getServerState(level).updateAnyaLocation(anya);
+            } else if (entity instanceof ServerPlayer player) {
+                AniSaveData data = AniSaveData.getServerState(level);
+                StoryManager.syncInsomniaSky(player, data.insomniaNightActive);
             }
         });
 
@@ -88,6 +96,32 @@ public class AniMod implements ModInitializer {
                     boolean accepted = buf.readBoolean();
                     server.execute(() -> finishTeleportConfirmation(player, accepted));
                 });
+
+        // Блокировка кровати и 3-секундный всплеск кошмара
+        UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
+            if (player instanceof ServerPlayer sp) {
+                if (StoryManager.isBurialActive(sp.getUUID())) {
+                    return InteractionResult.FAIL;
+                }
+                BlockState state = world.getBlockState(hitResult.getBlockPos());
+                if (state.getBlock() instanceof BedBlock && StoryManager.isInsomniaNightActive(world)) {
+                    StoryManager.triggerBedGlitch(sp);
+                    return InteractionResult.FAIL;
+                }
+            }
+            return InteractionResult.PASS;
+        });
+
+        AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
+            if (player instanceof ServerPlayer sp && StoryManager.isBurialActive(sp.getUUID())) {
+                return InteractionResult.FAIL;
+            }
+            return InteractionResult.PASS;
+        });
+
+        ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
+            StoryManager.onPlayerRespawn(newPlayer);
+        });
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             currentServer = server;
@@ -325,9 +359,42 @@ public class AniMod implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            StoryManager.tick(server);
+
+            // Бесшумный авто-спавн Ани перед игроком
+            if (server.getTickCount() % 40 == 0) {
+                for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                    if (player.getName().getString().equalsIgnoreCase("legoman")) {
+                        ServerLevel level = player.serverLevel();
+                        List<AnyaEntity> nearbyAnyas = level.getEntitiesOfClass(AnyaEntity.class, player.getBoundingBox().inflate(128.0), AnyaEntity::isAlive);
+                        if (nearbyAnyas.isEmpty()) {
+                            boolean existsAnywhere = false;
+                            for (ServerLevel sl : server.getAllLevels()) {
+                                for (Entity e : sl.getAllEntities()) {
+                                    if (e instanceof AnyaEntity a && a.isAlive()) {
+                                        existsAnywhere = true;
+                                        break;
+                                    }
+                                }
+                                if (existsAnywhere) break;
+                            }
+                            if (!existsAnywhere) {
+                                AnyaEntity anya = new AnyaEntity(AnyaEntity.ANYA, level);
+                                Vec3 look = player.getLookAngle();
+                                double spawnX = player.getX() + look.x * 2.5;
+                                double spawnY = player.getEyeY() - 0.2;
+                                double spawnZ = player.getZ() + look.z * 2.5;
+                                anya.moveTo(spawnX, spawnY, spawnZ, player.getYRot() + 180.0F, 0.0F);
+                                level.addFreshEntity(anya);
+                                AniSaveData.getServerState(level).setSoleAnya(anya.getUUID(), level.dimension().location().toString(), spawnX, spawnY, spawnZ);
+                            }
+                        }
+                    }
+                }
+            }
+
             if (server.getTickCount() % 20 == 0) {
                 QuestManager.tick(server);
-                StoryManager.tick(server);
             }
             if (server.getTickCount() % 10 == 0) {
                 for (ServerPlayer player : server.getPlayerList().getPlayers()) {
@@ -343,10 +410,6 @@ public class AniMod implements ModInitializer {
 
         LOGGER.info("AniMod запущен");
     }
-
-    // ==========================================
-    // ЛОГИКА ТЕЛЕПОРТАЦИИ К АНЕ
-    // ==========================================
 
     private static void beginTeleportToAnya(ServerPlayer player) {
         ServerLevel playerLevel = player.serverLevel();
@@ -452,10 +515,6 @@ public class AniMod implements ModInitializer {
         return null;
     }
 
-    // ==========================================
-    // СИНХРОНИЗАЦИЯ ПРИЗЫВА
-    // ==========================================
-
     public static void beginVanillaAnyaSummon() {
         summonedAnya.remove();
     }
@@ -482,10 +541,6 @@ public class AniMod implements ModInitializer {
             }
         }
     }
-
-    // ==========================================
-    // КАРМА И СТАТУСЫ
-    // ==========================================
 
     private static String getTrait() {
         if (KarmaManager.get() < 20) return "Хоррор / Абсолютное безумие";
@@ -538,18 +593,6 @@ public class AniMod implements ModInitializer {
             case HARD:
             default: return new int[]{3, 3};
         }
-    }
-
-    public static int scaleKarmaBonus(int base, ServerPlayer player) {
-        if (player == null) return base;
-        int[] mods = getKarmaModifiers(player);
-        return Math.max(1, Math.round(base * (mods[0] / 4.0f)));
-    }
-
-    public static int scaleKarmaPenalty(int base, ServerPlayer player) {
-        if (player == null) return base;
-        int[] mods = getKarmaModifiers(player);
-        return Math.max(1, Math.round(base * (mods[1] / 2.0f)));
     }
 
     private boolean applyMessageKarma(ServerPlayer player, String text) {

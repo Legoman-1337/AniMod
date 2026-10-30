@@ -15,14 +15,12 @@ public class AniModClient implements ClientModInitializer {
     public void onInitializeClient() {
         EntityRendererRegistry.register(AnyaEntity.ANYA, AnyaRenderer::new);
 
-        // Ресивер подтверждения дальней телепортации
         ClientPlayNetworking.registerGlobalReceiver(AniMod.TELEPORT_PROMPT_PACKET,
                 (client, handler, buf, responseSender) -> {
                     double distance = buf.readDouble();
                     client.execute(() -> client.setScreen(new AnyaTeleportConfirmScreen(distance)));
                 });
 
-        // Ресивер сюжетной кат-сцены перехода
         ClientPlayNetworking.registerGlobalReceiver(AniMod.STORY_CUTSCENE_PACKET,
                 (client, handler, buf, responseSender) -> {
                     int stateId = buf.readInt();
@@ -30,10 +28,14 @@ public class AniModClient implements ClientModInitializer {
                     client.execute(() -> StoryScreenOverlay.startCutscene(stateId, durationTicks));
                 });
 
-        // Тик таймера кат-сцены на клиенте
+        ClientPlayNetworking.registerGlobalReceiver(AniMod.INSOMNIA_SKY_PACKET,
+                (client, handler, buf, responseSender) -> {
+                    boolean active = buf.readBoolean();
+                    client.execute(() -> StoryScreenOverlay.setInsomniaSkyActive(active));
+                });
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> StoryScreenOverlay.clientTick());
 
-        // Рендер кинематографичного оверлея
         HudRenderCallback.EVENT.register((graphics, tickDelta) -> StoryScreenOverlay.render(graphics, tickDelta));
     }
 

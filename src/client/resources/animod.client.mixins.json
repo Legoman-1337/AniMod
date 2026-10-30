@@ -5,7 +5,10 @@
 	"client": [
 		"ExampleClientMixin",
 		"AbstractClientPlayerMixin",
-		"GameRendererAccessor"
+		"GameRendererAccessor",
+		"MouseHandlerMixin",
+		"ClientLevelMixin",
+		"LevelRendererMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

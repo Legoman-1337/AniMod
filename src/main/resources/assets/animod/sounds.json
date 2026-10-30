@@ -3,5 +3,25 @@
     "sounds": [
       "animod:anya_sob"
     ]
+  },
+  "anya_laugh": {
+    "sounds": [
+      "animod:anya_laugh"
+    ]
+  },
+  "anya_alarm": {
+    "sounds": [
+      "animod:anya_alarm"
+    ]
+  },
+  "pocket_enter": {
+    "sounds": [
+      "animod:pocket_enter"
+    ]
+  },
+  "pocket_ambient": {
+    "sounds": [
+      "animod:pocket_ambient"
+    ]
   }
 }
