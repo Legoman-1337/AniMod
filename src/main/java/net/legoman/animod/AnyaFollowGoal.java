@@ -76,10 +76,19 @@ public class AnyaFollowGoal extends Goal {
     }
 
     private Player findPlayer() {
+        // Аня ходит за сюжетным игроком (любой ник, фиксируется при первом входе)
+        AniSaveData data = AniSaveData.getServerState((net.minecraft.server.level.ServerLevel) anya.level());
+        if (data.storyPlayerUuid != null && !data.storyPlayerUuid.isEmpty()) {
+            try {
+                java.util.UUID storyUuid = java.util.UUID.fromString(data.storyPlayerUuid);
+                for (Player player : anya.level().players()) {
+                    if (player.getUUID().equals(storyUuid)) return player;
+                }
+            } catch (IllegalArgumentException ignored) {}
+        }
+        // сюжетный игрок ещё не зафиксирован — первый не-наблюдатель рядом
         for (Player player : anya.level().players()) {
-            if (player.getName().getString().equalsIgnoreCase("legoman")) {
-                return player;
-            }
+            if (!player.isSpectator()) return player;
         }
         return null;
     }

@@ -9,13 +9,25 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
+import net.legoman.animod.economy.BeggingManager;
+import net.legoman.animod.economy.CoinManager;
+import net.legoman.animod.economy.CurseManager;
+import net.legoman.animod.economy.ShopPackets;
+import net.legoman.animod.economy.Upgrades;
+import net.legoman.animod.story.AcidRainManager;
+import net.legoman.animod.story.BossManager;
+import net.legoman.animod.story.InsomniaManager;
+import net.legoman.animod.story.KosmosManager;
 import net.legoman.animod.story.StoryAtmosphereEvents;
 import net.legoman.animod.story.StoryManager;
 import net.legoman.animod.story.StoryState;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.FriendlyByteBuf;
@@ -25,6 +37,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
@@ -32,6 +45,7 @@ import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -51,6 +65,20 @@ public class AniMod implements ModInitializer {
     public static final ResourceLocation TELEPORT_CONFIRM_PACKET = new ResourceLocation("animod", "teleport_confirm");
     public static final ResourceLocation STORY_CUTSCENE_PACKET = new ResourceLocation("animod", "story_cutscene");
     public static final ResourceLocation INSOMNIA_SKY_PACKET = new ResourceLocation("animod", "insomnia_sky");
+    public static final ResourceLocation TOXIC_SKY_PACKET = new ResourceLocation("animod", "toxic_sky");
+    public static final ResourceLocation SHOP_SYNC_PACKET = new ResourceLocation("animod", "shop_sync");
+    public static final ResourceLocation SHOP_BUY_PACKET = new ResourceLocation("animod", "shop_buy");
+    public static final ResourceLocation CURSE_SYNC_PACKET = new ResourceLocation("animod", "curse_sync");
+    public static final ResourceLocation VISION_PACKET = new ResourceLocation("animod", "vision_soap");
+    public static final ResourceLocation KOSMOS_PACKET = new ResourceLocation("animod", "kosmos_sky");
+    public static final ResourceLocation NONE_SKY_PACKET = new ResourceLocation("animod", "none_sky");
+    public static final ResourceLocation BLOOD_SKY_PACKET = new ResourceLocation("animod", "blood_sky");
+    public static final ResourceLocation STORY_ACT_PACKET = new ResourceLocation("animod", "story_act");
+    public static final ResourceLocation BSOD_CONFIRM_PACKET = new ResourceLocation("animod", "bsod_confirm");
+    public static final ResourceLocation COIN_POPUP_PACKET = new ResourceLocation("animod", "coin_popup");
+    public static final ResourceLocation BOSS_GLOBAL_PACKET = new ResourceLocation("animod", "boss_global");
+    public static final ResourceLocation VOICE_TOGGLE_PACKET = new ResourceLocation("animod", "voice_toggle");
+    public static final ResourceLocation CINEMATIC_TEXT_PACKET = new ResourceLocation("animod", "cinematic_text");
 
     private static final Map<UUID, PendingTeleport> pendingTeleports = new HashMap<>();
     private static final ThreadLocal<SummonedAnya> summonedAnya = new ThreadLocal<>();
@@ -79,7 +107,12 @@ public class AniMod implements ModInitializer {
                 AniSaveData.getServerState(level).updateAnyaLocation(anya);
             } else if (entity instanceof ServerPlayer player) {
                 AniSaveData data = AniSaveData.getServerState(level);
-                StoryManager.syncInsomniaSky(player, data.insomniaNightActive);
+                // Экономика: пересобрать атрибуты прокачек и синкнуть проклятие
+                Upgrades.applyAttributes(player, data);
+                ShopPackets.sendCurseSync(player);
+                ShopPackets.sendSync(player, false); // стартовый синк монет для UI
+                // ПОЛНЫЙ снапшот сюжета: акты, неба, босс, космос — ровно как на сервере
+                net.legoman.animod.story.StoryManager.sendStorySync(player, data);
             }
         });
 
@@ -97,16 +130,82 @@ public class AniMod implements ModInitializer {
                     server.execute(() -> finishTeleportConfirmation(player, accepted));
                 });
 
-        // Блокировка кровати и 3-секундный всплеск кошмара
+        // Покупка в магазине улучшений
+        ServerPlayNetworking.registerGlobalReceiver(SHOP_BUY_PACKET,
+                (server, player, handler, buf, responseSender) -> {
+                    int id = buf.readInt();
+                    server.execute(() -> handleShopBuy(player, id));
+                });
+
+        // Акт 7: игрок нажал [Я ГОТОВ] — сохраняем чанки и роняем хост
+        ServerPlayNetworking.registerGlobalReceiver(BSOD_CONFIRM_PACKET,
+                (server, player, handler, buf, responseSender) -> server.execute(() -> {
+                    // плашка подтверждена — больше не перепоказываем (см. applyDayLogic)
+                    AniSaveData bsodData = AniSaveData.getServerState(player.serverLevel());
+                    bsodData.bsodConfirmed = true;
+                    bsodData.setDirty();
+                    player.sendSystemMessage(Component.literal("§8[Система] Сохранение чанков на диск..."), false);
+                    server.saveAllChunks(true, true, true);
+                    // EXTREME (для себя): флаг-файл config/animod_extreme_bsod.txt + права админа → реальный BSOD.
+                    // Нет файла → Lite-версия для публики: фейковый BSOD-оверлей.
+                    if (net.legoman.animod.story.HardCrash.isExtremeEnabled(server)) {
+                        player.sendSystemMessage(Component.literal("§4[Система] Хост перезагружается. Правда."), false);
+                        net.legoman.animod.story.HardCrash.trigger();
+                    } else {
+                        FriendlyByteBuf b = new FriendlyByteBuf(Unpooled.buffer());
+                        b.writeInt(989);
+                        b.writeInt(400);
+                        ServerPlayNetworking.send(player, STORY_CUTSCENE_PACKET, b);
+                    }
+                }));
+
+        // Монеты за добычу: алмазная руда +3, древние обломки +10
+        PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
+            if (world.isClientSide() || !(player instanceof ServerPlayer sp)) return;
+            if (state.is(Blocks.DIAMOND_ORE) || state.is(Blocks.DEEPSLATE_DIAMOND_ORE)) {
+                CoinManager.add(sp, 3, "алмазная руда");
+            } else if (state.is(Blocks.ANCIENT_DEBRIS)) {
+                CoinManager.add(sp, 10, "древние обломки");
+            }
+        });
+
+        // Монеты за убийство враждебного моба: +1
+        ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
+            if (entity.level().isClientSide()) return;
+            if (damageSource.getEntity() instanceof ServerPlayer sp && entity instanceof net.minecraft.world.entity.monster.Monster) {
+                CoinManager.add(sp, 1, "убийство моба");
+            }
+        });
+
+        // Блокировка кровати и взаимодействие с сундуком в карманном мире
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (player instanceof ServerPlayer sp) {
+                BlockState state = world.getBlockState(hitResult.getBlockPos());
+
+                // Если кликнули по сундуку в карманном мире — открываем и запускаем шёпоты!
+                if (state.is(Blocks.CHEST) && world.dimension().location().getPath().contains("pocket")) {
+                    StoryManager.onChestOpenedByPlayer(sp);
+                    return InteractionResult.PASS;
+                }
+
                 if (StoryManager.isBurialActive(sp.getUUID())) {
                     return InteractionResult.FAIL;
                 }
-                BlockState state = world.getBlockState(hitResult.getBlockPos());
+
                 if (state.getBlock() instanceof BedBlock && StoryManager.isInsomniaNightActive(world)) {
+                    // Акт 4, день 3: кровать затягивает в Космос вместо кошмара
+                    if (InsomniaManager.tryEnterKosmos(sp)) {
+                        return InteractionResult.FAIL;
+                    }
                     StoryManager.triggerBedGlitch(sp);
                     return InteractionResult.FAIL;
+                }
+
+                // Акт 4: гравитационные маяки в Космосе
+                if (state.is(Blocks.BEACON)) {
+                    if (KosmosManager.onBeaconClick(sp)) {
+                        return InteractionResult.FAIL;
+                    }
                 }
             }
             return InteractionResult.PASS;
@@ -121,6 +220,11 @@ public class AniMod implements ModInitializer {
 
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> {
             StoryManager.onPlayerRespawn(newPlayer);
+            // Боссфайт: смерть не выносит игрока из боя — респавн на арене, музыка заново
+            AniSaveData data = AniSaveData.getServerState(newPlayer.serverLevel());
+            if (!data.bossDefeated && data.getStoryState() == StoryState.ANYA_BODY_EVENT) {
+                BossManager.respawnFighter(newPlayer, data);
+            }
         });
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
@@ -145,6 +249,7 @@ public class AniMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             currentServer = null;
             pendingTeleports.clear();
+            DevModeManager.onServerStopped();
             KarmaManager.setFromSave(50);
             AnyaAI.loadMemory(new ArrayList<>());
         });
@@ -153,7 +258,7 @@ public class AniMod implements ModInitializer {
             String rawText = message.signedBody().content();
             String playerName = sender.getName().getString();
 
-            if (playerName.equalsIgnoreCase("legoman")) {
+            if (net.legoman.animod.story.StoryPlayers.isStoryPlayer(sender)) {
                 if (rawText.equalsIgnoreCase("!карма плюс")) {
                     KarmaManager.set(Math.min(100, KarmaManager.get() + 10));
                     sender.sendSystemMessage(Component.literal("§a[Система] Карма Ани повышена! Текущая: " + KarmaManager.get()));
@@ -182,6 +287,7 @@ public class AniMod implements ModInitializer {
 
             String norm = normalize(rawText).replaceAll("[^а-яa-z0-9]", "");
             if (norm.isEmpty()) return;
+            if (BeggingManager.handle(sender, rawText)) return; // выпрашивание обработано, ИИ молчит
             applyMessageKarma(sender, rawText);
             AnyaAI.processAndSend(sender, rawText);
         });
@@ -226,6 +332,10 @@ public class AniMod implements ModInitializer {
                     .then(Commands.literal("karma").then(Commands.literal("set").then(Commands.argument("number", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 100)).executes(context -> {
                         int value = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "number");
                         ServerPlayer player = context.getSource().getPlayer();
+                        if (player != null && !DevModeManager.isEnabled(player)) {
+                            context.getSource().sendFailure(Component.literal("§cКарму можно менять только в режиме разработчика (/ani test on)."));
+                            return 0;
+                        }
                         KarmaManager.set(value);
                         if (player != null) drawKarmaActionBar(player);
                         context.getSource().sendSuccess(() -> Component.literal("§a[Система] Карма установлена на: " + KarmaManager.get()), false);
@@ -237,16 +347,6 @@ public class AniMod implements ModInitializer {
                             player.sendSystemMessage(Component.literal("§d--- ИНВЕНТАРИ АНИ ---"));
                             player.sendSystemMessage(Component.literal("§eОбычный ПКМ: §fОсновной инвентарь (вещи). Предметы внутри замедляют полет Ани."));
                             player.sendSystemMessage(Component.literal("§eShift + ПКМ: §fПодарки. Никак не замедляют Аню."));
-                            player.sendSystemMessage(Component.literal(" "));
-                            player.sendSystemMessage(Component.literal("§dИдеальный Баланс по сложностям:"));
-                            player.sendSystemMessage(Component.literal("§bМирный: §fИнвентари отключены."));
-                            player.sendSystemMessage(Component.literal("§bЛегкий/Нормальный: §fЦветы/Средние +2. Ценные до +8. Штрафы: от -2 до -3."));
-                            player.sendSystemMessage(Component.literal("§bСложный: §fЦветы/Средние +1. Ценные слабее. Штрафы: от -3 до -5."));
-                            player.sendSystemMessage(Component.literal("§bХардкор: §fЦветы/Средние +1. Ценные -30%. Штрафы: суровые (до -8)."));
-                            player.sendSystemMessage(Component.literal(" "));
-                            player.sendSystemMessage(Component.literal("§aКарма за подарки начисляется за 1 шт."));
-                            player.sendSystemMessage(Component.literal("§aЛимиты в день: 4 Средних, 1 Дорогой. Цветы - без лимита (но не больше 4 разных за раз!)."));
-                            player.sendSystemMessage(Component.literal("§eЛайфхак: Напишите в чат 'Аня, пожалуйста, можно я подарю подарок?', чтобы сбросить дневные лимиты."));
                         }
                         return 1;
                     }))
@@ -269,6 +369,89 @@ public class AniMod implements ModInitializer {
                                 if (player != null && player.serverLevel() != null) {
                                     beginTeleportToAnya(player);
                                 }
+                                return 1;
+                            })))
+                    .then(Commands.literal("rematch").executes(context -> {
+                        // Реванш после смерти: бар текущего этапа на 100%, игрок снова на арене
+                        ServerPlayer player = context.getSource().getPlayer();
+                        if (player != null) {
+                            AniSaveData data = AniSaveData.getServerState(player.serverLevel());
+                            if (!data.bossDefeated && data.getStoryState() == StoryState.ANYA_BODY_EVENT) {
+                                BossManager.rematch(player, data);
+                            } else {
+                                player.sendSystemMessage(Component.literal("§c[Система] Боссфайта сейчас нет."));
+                            }
+                        }
+                        return 1;
+                    }))
+                    .then(Commands.literal("shop").executes(context -> {
+                        ServerPlayer player = context.getSource().getPlayer();
+                        if (player != null) ShopPackets.sendSync(player, true);
+                        return 1;
+                    }))
+                    .then(Commands.literal("coins")
+                            .executes(context -> {
+                                ServerPlayer player = context.getSource().getPlayer();
+                                if (player != null) {
+                                    AniSaveData data = AniSaveData.getServerState(player.serverLevel());
+                                    player.sendSystemMessage(Component.literal("§eУ тебя " + data.anyaCoins + " монет. §7Прокачки: клинка " + data.upBlade + "/3, слэшер " + data.upSlasher + "/3, ловкость " + data.upAgility + "/3, счастливчик " + data.upLucky + "/3"));
+                                }
+                                return 1;
+                            })
+                            .then(Commands.literal("add").then(Commands.argument("amount", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 10000)).executes(context -> {
+                                ServerPlayer player = context.getSource().getPlayer();
+                                if (player != null && !DevModeManager.isEnabled(player)) {
+                                    context.getSource().sendFailure(Component.literal("§cВыдача монет доступна только в режиме разработчика (/ani test on)."));
+                                    return 0;
+                                }
+                                int amount = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "amount");
+                                if (player != null) {
+                                    CoinManager.add(player, amount, "dev");
+                                    player.sendSystemMessage(Component.literal("§7[Dev] Выдано " + amount + " монет."));
+                                }
+                                return 1;
+                            }))))
+                    .then(Commands.literal("decode").then(Commands.argument("code", com.mojang.brigadier.arguments.StringArgumentType.word()).executes(context -> {
+                        String code = com.mojang.brigadier.arguments.StringArgumentType.getString(context, "code");
+                        ServerPlayer player = context.getSource().getPlayer();
+                        if (player != null) net.legoman.animod.story.ArgFilesManager.decode(player, code);
+                        return 1;
+                    })))
+                    .then(Commands.literal("voice")
+                            .then(Commands.literal("on").executes(context -> {
+                                ServerPlayer player = context.getSource().getPlayer();
+                                if (player != null) {
+                                    FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+                                    buf.writeBoolean(true);
+                                    ServerPlayNetworking.send(player, VOICE_TOGGLE_PACKET, buf);
+                                    player.sendSystemMessage(Component.literal("§a[Озвучка] Реплики Ани: ВКЛ"));
+                                }
+                                return 1;
+                            }))
+                            .then(Commands.literal("off").executes(context -> {
+                                ServerPlayer player = context.getSource().getPlayer();
+                                if (player != null) {
+                                    FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+                                    buf.writeBoolean(false);
+                                    ServerPlayNetworking.send(player, VOICE_TOGGLE_PACKET, buf);
+                                    player.sendSystemMessage(Component.literal("§7[Озвучка] Реплики Ани: ВЫКЛ"));
+                                }
+                                return 1;
+                            })))
+                    .then(Commands.literal("test")
+                            .executes(context -> {
+                                ServerPlayer player = context.getSource().getPlayer();
+                                DevModeManager.handleAniTest(player, null);
+                                return 1;
+                            })
+                            .then(Commands.literal("on").executes(context -> {
+                                ServerPlayer player = context.getSource().getPlayer();
+                                DevModeManager.handleAniTest(player, true);
+                                return 1;
+                            }))
+                            .then(Commands.literal("off").executes(context -> {
+                                ServerPlayer player = context.getSource().getPlayer();
+                                DevModeManager.handleAniTest(player, false);
                                 return 1;
                             })))
                     .then(Commands.literal("story")
@@ -327,8 +510,8 @@ public class AniMod implements ModInitializer {
                                     }
                                 }
                                 return 1;
-                            })))
-                            .then(Commands.literal("event").then(Commands.argument("type", com.mojang.brigadier.arguments.StringArgumentType.word()).executes(context -> {
+                            }))))
+                    .then(Commands.literal("event").then(Commands.argument("type", com.mojang.brigadier.arguments.StringArgumentType.word()).executes(context -> {
                                 String type = com.mojang.brigadier.arguments.StringArgumentType.getString(context, "type");
                                 ServerPlayer player = context.getSource().getPlayer();
                                 if (player != null) {
@@ -337,22 +520,37 @@ public class AniMod implements ModInitializer {
                                         case "torches" -> StoryAtmosphereEvents.extinguishTorches(player);
                                         case "night" -> StoryAtmosphereEvents.suddenNight(player);
                                         case "leave" -> StoryAtmosphereEvents.fakePlayerLeave(player);
-                                        default -> player.sendSystemMessage(Component.literal("§cДоступные ивенты: note, torches, night, leave"));
+                                        case "acidrain" -> AcidRainManager.startAcidRain(player.serverLevel().getServer(), AniSaveData.getServerState(player.serverLevel()));
+                                        case "sounds" -> {
+                                            player.sendSystemMessage(Component.literal("§e[ЗВУК] Играю 3 модовых звука подряд: всхлип → тревога → шёпот. Слышишь?"));
+                                            var server = player.serverLevel().getServer();
+                                            player.serverLevel().playSound(null, player.blockPosition(), ModSounds.ANYA_SOB, SoundSource.MASTER, 2.0F, 1.0F);
+                                            server.tell(new net.minecraft.server.TickTask(server.getTickCount() + 60, () ->
+                                                    player.serverLevel().playSound(null, player.blockPosition(), ModSounds.ANYA_ALARM, SoundSource.MASTER, 2.0F, 1.4F)));
+                                            server.tell(new net.minecraft.server.TickTask(server.getTickCount() + 120, () ->
+                                                    player.serverLevel().playSound(null, player.blockPosition(), ModSounds.ANYA_WHISPER_1, SoundSource.MASTER, 2.0F, 1.0F)));
+                                        }
+                                        default -> player.sendSystemMessage(Component.literal("§cДоступные ивенты: note, torches, night, leave, acidrain, sounds"));
                                     }
                                 }
                                 return 1;
-                            })))));
+                            }))));
         });
 
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (!world.isClientSide() && player.getName().getString().equalsIgnoreCase("legoman")
-                    && (entity instanceof Animal || entity instanceof Villager)) {
-                long now = System.currentTimeMillis();
-                if (lastPeacefulHitKarmaTime == Long.MIN_VALUE || now - lastPeacefulHitKarmaTime >= PEACEFUL_HIT_COOLDOWN_MS) {
-                    KarmaManager.set(Math.max(0, KarmaManager.get() - 3));
-                    lastPeacefulHitKarmaTime = now;
-                    player.sendSystemMessage(Component.literal("§c[Аня] Зачем ты бьешь мирных существ?! (-3 кармы)"));
-                    AnyaAI.addMemoryFact("Игрок ударил мирное существо (" + entity.getType().getDescription().getString() + ")", null);
+            // Боссфайт: удар по зелёному орбу отправляет его обратно в Аню
+            if (!world.isClientSide() && player instanceof ServerPlayer sp && BossManager.tryDeflect(sp, entity)) {
+                return InteractionResult.SUCCESS;
+            }
+            if (!world.isClientSide() && net.legoman.animod.story.StoryPlayers.isStoryPlayer(player)) {
+                if (entity instanceof Animal || entity instanceof Villager) {
+                    long now = System.currentTimeMillis();
+                    if (lastPeacefulHitKarmaTime == Long.MIN_VALUE || now - lastPeacefulHitKarmaTime >= PEACEFUL_HIT_COOLDOWN_MS) {
+                        KarmaManager.set(Math.max(0, KarmaManager.get() - 3));
+                        lastPeacefulHitKarmaTime = now;
+                        player.sendSystemMessage(Component.literal("§c[Аня] Зачем ты бьешь мирных существ?! (-3 кармы)"));
+                        AnyaAI.addMemoryFact("Игрок ударил мирное существо (" + entity.getType().getDescription().getString() + ")", null);
+                    }
                 }
             }
             return InteractionResult.PASS;
@@ -360,35 +558,40 @@ public class AniMod implements ModInitializer {
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             StoryManager.tick(server);
+            pollCommandFile(server);
 
-            // Бесшумный авто-спавн Ани перед игроком
             if (server.getTickCount() % 40 == 0) {
-                for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                    if (player.getName().getString().equalsIgnoreCase("legoman")) {
-                        ServerLevel level = player.serverLevel();
-                        List<AnyaEntity> nearbyAnyas = level.getEntitiesOfClass(AnyaEntity.class, player.getBoundingBox().inflate(128.0), AnyaEntity::isAlive);
-                        if (nearbyAnyas.isEmpty()) {
-                            boolean existsAnywhere = false;
-                            for (ServerLevel sl : server.getAllLevels()) {
-                                for (Entity e : sl.getAllEntities()) {
-                                    if (e instanceof AnyaEntity a && a.isAlive()) {
-                                        existsAnywhere = true;
-                                        break;
-                                    }
+                ServerPlayer storyPlayer = net.legoman.animod.story.StoryPlayers.get(server);
+                if (storyPlayer != null) {
+                    // Акт 8: «Ани нигде нет»; Удаление: Аня стёрта — автоспавн запрещён
+                    StoryState st = AniSaveData.getServerState(storyPlayer.serverLevel()).getStoryState();
+                    boolean anyaAbsent = st == StoryState.ANYA_IS_NOT_HERE
+                            || (st == StoryState.STORY_COMPLETED && KarmaManager.get() < 30);
+                    if (!anyaAbsent) {
+                    ServerLevel level = storyPlayer.serverLevel();
+                    List<AnyaEntity> nearbyAnyas = level.getEntitiesOfClass(AnyaEntity.class, storyPlayer.getBoundingBox().inflate(128.0), AnyaEntity::isAlive);
+                    if (nearbyAnyas.isEmpty()) {
+                        boolean existsAnywhere = false;
+                        for (ServerLevel sl : server.getAllLevels()) {
+                            for (Entity e : sl.getAllEntities()) {
+                                if (e instanceof AnyaEntity a && a.isAlive()) {
+                                    existsAnywhere = true;
+                                    break;
                                 }
-                                if (existsAnywhere) break;
                             }
-                            if (!existsAnywhere) {
-                                AnyaEntity anya = new AnyaEntity(AnyaEntity.ANYA, level);
-                                Vec3 look = player.getLookAngle();
-                                double spawnX = player.getX() + look.x * 2.5;
-                                double spawnY = player.getEyeY() - 0.2;
-                                double spawnZ = player.getZ() + look.z * 2.5;
-                                anya.moveTo(spawnX, spawnY, spawnZ, player.getYRot() + 180.0F, 0.0F);
-                                level.addFreshEntity(anya);
-                                AniSaveData.getServerState(level).setSoleAnya(anya.getUUID(), level.dimension().location().toString(), spawnX, spawnY, spawnZ);
-                            }
+                            if (existsAnywhere) break;
                         }
+                        if (!existsAnywhere) {
+                            AnyaEntity anya = new AnyaEntity(AnyaEntity.ANYA, level);
+                            Vec3 look = storyPlayer.getLookAngle();
+                            double spawnX = storyPlayer.getX() + look.x * 2.5;
+                            double spawnY = storyPlayer.getEyeY() - 0.2;
+                            double spawnZ = storyPlayer.getZ() + look.z * 2.5;
+                            anya.moveTo(spawnX, spawnY, spawnZ, storyPlayer.getYRot() + 180.0F, 0.0F);
+                            level.addFreshEntity(anya);
+                            AniSaveData.getServerState(level).setSoleAnya(anya.getUUID(), level.dimension().location().toString(), spawnX, spawnY, spawnZ);
+                        }
+                    }
                     }
                 }
             }
@@ -397,18 +600,86 @@ public class AniMod implements ModInitializer {
                 QuestManager.tick(server);
             }
             if (server.getTickCount() % 10 == 0) {
-                for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                    if (player.getName().getString().equalsIgnoreCase("legoman")) drawKarmaActionBar(player);
-                }
+                ServerPlayer sp = net.legoman.animod.story.StoryPlayers.get(server);
+                if (sp != null) drawKarmaActionBar(sp);
             }
             if (server.getTickCount() % 20 == 0) {
-                for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                    if (player.getName().getString().equalsIgnoreCase("legoman")) AnyaAI.updateContextCache(player, true);
-                }
+                ServerPlayer sp = net.legoman.animod.story.StoryPlayers.get(server);
+                if (sp != null) AnyaAI.updateContextCache(sp, true);
             }
         });
 
         LOGGER.info("AniMod запущен");
+    }
+
+    /**
+     * Дев-мост для агентов: команды из файла run/config/animod_cmd.txt исполняются
+     * сервером (права OP), файл удаляется. По одной команде на строку, строки с # — комментарии.
+     * Так суб-агент тестирует сюжет в живом клиенте без клавиатуры.
+     */
+    private static long lastCmdPollMs = 0L;
+
+    private static void pollCommandFile(MinecraftServer server) {
+        long now = System.currentTimeMillis();
+        if (now - lastCmdPollMs < 500L) return;
+        lastCmdPollMs = now;
+        try {
+            java.nio.file.Path file = net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir()
+                    .resolve("config").resolve("animod_cmd.txt");
+            if (!java.nio.file.Files.exists(file)) return;
+            java.util.List<String> lines = java.nio.file.Files.readAllLines(file);
+            java.nio.file.Files.deleteIfExists(file);
+            for (String line : lines) {
+                String cmd = line.trim();
+                if (cmd.isEmpty() || cmd.startsWith("#")) continue;
+                LOGGER.info("[AgentBridge] Выполняю: {}", cmd);
+                // от имени сюжетного игрока (иначе /ani-команды с getPlayer() молчат из консоли)
+                ServerPlayer sp = net.legoman.animod.story.StoryPlayers.get(server);
+                CommandSourceStack source = sp != null
+                        ? sp.createCommandSourceStack().withPermission(4)
+                        : server.createCommandSourceStack().withPermission(4);
+                server.getCommands().performPrefixedCommand(source, cmd);
+            }
+        } catch (Exception e) {
+            LOGGER.warn("[AgentBridge] Ошибка чтения команд: {}", e.toString());
+        }
+    }
+
+    private static void handleShopBuy(ServerPlayer player, int id) {
+        AniSaveData data = AniSaveData.getServerState(player.serverLevel());
+
+        if (id >= 0 && id <= 3) {
+            int level = Upgrades.level(data, id);
+            if (level >= 3) {
+                player.sendSystemMessage(Component.literal("§e[Магазин] §c" + Upgrades.NAMES[id] + ": максимальный уровень."));
+            } else {
+                int cost = priceWithDiscount(data, Upgrades.COSTS[id][level]);
+                if (CoinManager.trySpend(data, cost)) {
+                    Upgrades.setLevel(data, id, level + 1);
+                    data.setDirty();
+                    Upgrades.applyAttributes(player, data);
+                    player.sendSystemMessage(Component.literal("§e[Магазин] §a" + Upgrades.NAMES[id] + " → уровень " + (level + 1) + "! (-" + cost + " монет)"));
+                } else {
+                    player.sendSystemMessage(Component.literal("§e[Магазин] §cНе хватает монет: нужно " + cost + ", у тебя " + data.anyaCoins + "."));
+                }
+            }
+        } else if (id == 4) {
+            if (data.activeCurse == 0) {
+                player.sendSystemMessage(Component.literal("§e[Магазин] §7На тебе и так нет проклятий."));
+            } else if (CoinManager.trySpend(data, priceWithDiscount(data, Upgrades.CURSE_REMOVAL_COST))) {
+                String curseName = CurseManager.CURSE_NAMES[data.activeCurse];
+                CurseManager.remove(player.serverLevel().getServer(), data, player);
+                player.sendSystemMessage(Component.literal("§e[Магазин] §aПроклятие «" + curseName + "» снято!"));
+            } else {
+                player.sendSystemMessage(Component.literal("§e[Магазин] §cНе хватает монет на снятие проклятия (" + priceWithDiscount(data, Upgrades.CURSE_REMOVAL_COST) + ")."));
+            }
+        }
+        ShopPackets.sendSync(player, false);
+    }
+
+    /** Цена со скидкой -20% во время распродажи-приманки (Акт 9). */
+    private static int priceWithDiscount(AniSaveData data, int baseCost) {
+        return data.discountActive ? Math.max(1, (int) Math.ceil(baseCost * 0.8)) : baseCost;
     }
 
     private static void beginTeleportToAnya(ServerPlayer player) {
@@ -606,6 +877,8 @@ public class AniMod implements ModInitializer {
             triggerAnyaReaction(player, 1);
             AnyaAI.addMemoryFact("Игрок разозлился и оскорбил меня.", text);
         } else if (AnyaTextEmotion.isCompliment(normalized)) {
+            // комплимент важен для остановки кислотного дождя независимо от дневного гейта кармы
+            AcidRainManager.onCompliment(player);
             long minecraftDay = player.serverLevel().getDayTime() / 24000L;
             if (minecraftDay != lastComplimentMinecraftDay) {
                 int old = KarmaManager.get();

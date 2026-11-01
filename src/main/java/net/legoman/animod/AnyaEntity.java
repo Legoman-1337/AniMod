@@ -40,11 +40,24 @@ public class AnyaEntity extends Ghast implements GeoEntity {
                     .build("anya")
     );
 
+    public static final EntityType<GreenOrbEntity> GREEN_ORB = Registry.register(
+            BuiltInRegistries.ENTITY_TYPE,
+            new ResourceLocation("animod", "green_orb"),
+            EntityType.Builder.<GreenOrbEntity>of(GreenOrbEntity::new, MobCategory.MISC)
+                    .sized(0.95F, 0.95F)
+                    .fireImmune()
+                    .build("green_orb")
+    );
+
     private static final EntityDataAccessor<Integer> REACTION_TICKS =
             SynchedEntityData.defineId(AnyaEntity.class, EntityDataSerializers.INT);
 
     private static final EntityDataAccessor<Integer> REACTION_TYPE =
             SynchedEntityData.defineId(AnyaEntity.class, EntityDataSerializers.INT);
+
+    /** Акт 9: эта Аня — гигантский босс «Воплощение Сбоя» (клиент масштабирует модель). */
+    private static final EntityDataAccessor<Boolean> BOSS_FORM =
+            SynchedEntityData.defineId(AnyaEntity.class, EntityDataSerializers.BOOLEAN);
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
@@ -88,6 +101,15 @@ public class AnyaEntity extends Ghast implements GeoEntity {
         super.defineSynchedData();
         entityData.define(REACTION_TICKS, 0);
         entityData.define(REACTION_TYPE, 0);
+        entityData.define(BOSS_FORM, false);
+    }
+
+    public void setBossForm(boolean boss) {
+        entityData.set(BOSS_FORM, boss);
+    }
+
+    public boolean isBossForm() {
+        return entityData.get(BOSS_FORM);
     }
 
     @Override
@@ -97,6 +119,8 @@ public class AnyaEntity extends Ghast implements GeoEntity {
 
     @Override
     public boolean hurt(DamageSource source, float amount) {
+        // Босс (Акт 9) получает урон через дельта-систему BossManager — не блокируем
+        if (isBossForm()) return super.hurt(source, amount);
         return false;
     }
 

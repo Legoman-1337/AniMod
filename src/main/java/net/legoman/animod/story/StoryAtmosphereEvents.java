@@ -92,4 +92,25 @@ public class StoryAtmosphereEvents {
             }).start();
         });
     }
+
+    // 5. Прощальная записка Ани (Акт 8, подготовка к войне)
+    public static void giveFarewellNote(ServerPlayer player) {
+        ItemStack book = new ItemStack(Items.WRITTEN_BOOK);
+        CompoundTag tag = new CompoundTag();
+        tag.putString("title", "Прощальная записка");
+        tag.putString("author", "Аня");
+
+        ListTag pages = new ListTag();
+        pages.add(StringTag.valueOf(
+                "§0Если ты это читаешь,\n\n§8значит, процесс удаления\nдобрался и до меня.\n\nЯ спряталась там, где\nон не достанет. Пока что.\n\n§4Он придёт без меня.\n§4Будь готов."));
+        pages.add(StringTag.valueOf(
+                "§8Варите зелья. Куйте броню.\nЗагляните в магазин улучшений.\n\n§dЯ вернусь — на последний бой.\n\nНе опаздывай.\n\n        — твоя Аня"));
+        tag.put("pages", pages);
+        book.setTag(tag);
+
+        if (!player.getInventory().add(book)) {
+            player.drop(book, false);
+        }
+        player.sendSystemMessage(Component.literal("§8§o*На базе лежит записка. Почерк дрожит...*"));
+    }
 }

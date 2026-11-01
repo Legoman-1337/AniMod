@@ -1,27 +1,293 @@
 {
-  "anya_sob": {
+  "voice_1": {
+    "category": "voice",
     "sounds": [
-      "animod:anya_sob"
+      "animod:voice_1"
     ]
   },
-  "anya_laugh": {
+  "voice_2": {
+    "category": "voice",
     "sounds": [
-      "animod:anya_laugh"
+      "animod:voice_2"
+    ]
+  },
+  "voice_3": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_3"
+    ]
+  },
+  "voice_4": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_4"
+    ]
+  },
+  "voice_5": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_5"
+    ]
+  },
+  "voice_6": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_6"
+    ]
+  },
+  "voice_7": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_7"
+    ]
+  },
+  "voice_8": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_8"
+    ]
+  },
+  "voice_9": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_9"
+    ]
+  },
+  "voice_10": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_10"
+    ]
+  },
+  "voice_11": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_11"
+    ]
+  },
+  "voice_12": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_12"
+    ]
+  },
+  "voice_13": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_13"
+    ]
+  },
+  "voice_14": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_14"
+    ]
+  },
+  "voice_15": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_15"
+    ]
+  },
+  "voice_16": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_16"
+    ]
+  },
+  "voice_17": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_17"
+    ]
+  },
+  "voice_18": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_18"
+    ]
+  },
+  "voice_19": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_19"
+    ]
+  },
+  "voice_20": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_20"
+    ]
+  },
+  "voice_21": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_21"
+    ]
+  },
+  "voice_22": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_22"
+    ]
+  },
+  "voice_23": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_23"
+    ]
+  },
+  "voice_25": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_25"
+    ]
+  },
+  "voice_30": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_30"
+    ]
+  },
+  "voice_31": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_31"
+    ]
+  },
+  "voice_33": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_33"
+    ]
+  },
+  "voice_34": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_34"
+    ]
+  },
+  "voice_35": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_35"
+    ]
+  },
+  "voice_36": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_36"
+    ]
+  },
+  "voice_38": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_38"
+    ]
+  },
+  "voice_39": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_39"
+    ]
+  },
+  "voice_40": {
+    "category": "voice",
+    "sounds": [
+      "animod:voice_40"
     ]
   },
   "anya_alarm": {
+    "category": "master",
     "sounds": [
       "animod:anya_alarm"
     ]
   },
-  "pocket_enter": {
+  "anya_boss_stage-1": {
+    "category": "music",
     "sounds": [
-      "animod:pocket_enter"
+      {
+        "name": "animod:anya_boss_stage-1",
+        "stream": false
+      }
+    ]
+  },
+  "anya_boss_stage-2": {
+    "category": "music",
+    "sounds": [
+      {
+        "name": "animod:anya_boss_stage-2",
+        "stream": false
+      }
+    ]
+  },
+  "anya_boss_stage-3": {
+    "category": "music",
+    "sounds": [
+      {
+        "name": "animod:anya_boss_stage-3",
+        "stream": false
+      }
+    ]
+  },
+  "anya_kosmos_theme": {
+    "category": "music",
+    "sounds": [
+      {
+        "name": "animod:anya_kosmos_theme",
+        "stream": false
+      }
+    ]
+  },
+  "anya_laugh": {
+    "category": "master",
+    "sounds": [
+      "animod:anya_laugh"
+    ]
+  },
+  "anya_sob": {
+    "category": "master",
+    "sounds": [
+      "animod:anya_sob"
+    ]
+  },
+  "anya_whisper_1": {
+    "category": "voice",
+    "sounds": [
+      "animod:anya_whisper_1"
+    ]
+  },
+  "anya_whisper_2": {
+    "category": "voice",
+    "sounds": [
+      "animod:anya_whisper_2"
+    ]
+  },
+  "anya_whisper_3": {
+    "category": "voice",
+    "sounds": [
+      "animod:anya_whisper_3"
+    ]
+  },
+  "anya_whisper_4": {
+    "category": "voice",
+    "sounds": [
+      "animod:anya_whisper_4"
     ]
   },
   "pocket_ambient": {
+    "category": "ambient",
     "sounds": [
-      "animod:pocket_ambient"
+      {
+        "name": "animod:pocket_ambient",
+        "stream": false
+      }
+    ]
+  },
+  "pocket_enter": {
+    "category": "master",
+    "sounds": [
+      "animod:pocket_enter"
     ]
   }
 }

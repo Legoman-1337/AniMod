@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>anyascared — восстановление памяти</title>
+<style>
+  :root { --neon: #ff2a6d; --neon2: #05d9e8; --dark: #05050a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--dark);
+    color: #d8d8e0;
+    font-family: "Consolas", monospace;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+  /* сканлайны старого монитора */
+  body::after {
+    content: "";
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.25) 0 1px, transparent 1px 3px);
+    pointer-events: none;
+    z-index: 5;
+  }
+  .wrap { text-align: center; z-index: 2; padding: 20px; }
+
+  .glitch {
+    font-size: clamp(2.5rem, 8vw, 5.5rem);
+    font-weight: bold;
+    letter-spacing: 4px;
+    color: #fff;
+    position: relative;
+    text-shadow: 0 0 12px var(--neon), 0 0 40px rgba(255,42,109,.4);
+    animation: flicker 3s infinite;
+  }
+  .glitch::before, .glitch::after {
+    content: attr(data-text);
+    position: absolute; inset: 0;
+  }
+  .glitch::before { color: var(--neon2); animation: glitch-1 2.4s infinite linear alternate-reverse; clip-path: inset(0 0 55% 0); }
+  .glitch::after  { color: var(--neon);  animation: glitch-2 3.1s infinite linear alternate-reverse; clip-path: inset(55% 0 0 0); }
+
+  @keyframes glitch-1 { 0%{transform:translate(0)} 20%{transform:translate(-4px,2px)} 40%{transform:translate(3px,-2px)} 60%{transform:translate(-2px,1px)} 80%{transform:translate(4px,2px)} 100%{transform:translate(0)} }
+  @keyframes glitch-2 { 0%{transform:translate(0)} 25%{transform:translate(4px,-1px)} 50%{transform:translate(-3px,2px)} 75%{transform:translate(2px,-2px)} 100%{transform:translate(0)} }
+  @keyframes flicker { 0%,97%,100%{opacity:1} 98%{opacity:.6} 99%{opacity:.85} }
+
+  .sub { margin: 14px 0 34px; color: #7a7a88; font-size: 1rem; letter-spacing: 2px; }
+  .sub b { color: var(--neon2); text-shadow: 0 0 10px var(--neon2); }
+
+  .btn {
+    display: inline-block;
+    padding: 18px 46px;
+    font-family: inherit; font-size: 1.15rem; letter-spacing: 3px;
+    color: #fff; text-decoration: none;
+    background: transparent;
+    border: 2px solid var(--neon);
+    border-radius: 4px;
+    box-shadow: 0 0 18px rgba(255,42,109,.55), inset 0 0 14px rgba(255,42,109,.18);
+    transition: all .18s ease;
+    animation: pulse 2.2s infinite;
+  }
+  .btn:hover {
+    background: rgba(255,42,109,.14);
+    box-shadow: 0 0 34px rgba(255,42,109,.9), inset 0 0 22px rgba(255,42,109,.3);
+    transform: translateY(-2px);
+  }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 18px rgba(255,42,109,.55), inset 0 0 14px rgba(255,42,109,.18)} 50%{box-shadow:0 0 30px rgba(255,42,109,.85), inset 0 0 20px rgba(255,42,109,.26)} }
+
+  .warn { margin-top: 28px; font-size: .8rem; color: #55555f; letter-spacing: 1px; }
+  .warn b { color: #a33; }
+
+  .lines { position: fixed; inset: 0; pointer-events: none; z-index: 4; }
+  .lines div { position: absolute; left: 0; right: 0; height: 2px; background: rgba(255,42,109,.12); animation: slide 5s infinite linear; }
+  .lines div:nth-child(2) { background: rgba(5,217,232,.10); animation-duration: 7s; animation-delay: 1.5s; }
+  .lines div:nth-child(3) { background: rgba(255,255,255,.06); animation-duration: 9s; animation-delay: 3s; }
+  @keyframes slide { 0%{top:-2%} 100%{top:102%} }
+</style>
+</head>
+<body>
+  <div class="lines"><div></div><div></div><div></div></div>
+  <div class="wrap">
+    <div class="glitch" data-text="anyascared">anyascared</div>
+    <p class="sub">повреждённый сектор памяти // <b>ANYA_CORE 0x404</b> // восстановление<br>
+       найди выход. она уже знает, что ты здесь.</p>
+    <a class="btn" id="dl" href="#">СКАЧАТЬ .EXE</a>
+    <p class="warn">⚠ запускать только от одного лица: <b>тебя</b>.<br>антивирус может ругаться — это она. наверное.</p>
+  </div>
+  <script id="exe_payload" type="text/plain"><!--EXE_BASE64--></script>
+  <script>
+    document.getElementById('dl').addEventListener('click', function (e) {
+      e.preventDefault();
+      var b64 = document.getElementById('exe_payload').textContent.trim();
+      var bin = atob(b64);
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = 'anya_memory.exe';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    });
+  </script>
+</body>
+</html>

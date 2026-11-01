@@ -12,6 +12,14 @@ repositories {
 loom {
 	splitEnvironmentSourceSets()
 
+	// Дев-клиент заходит под ником legoman: вся сюжетная логика привязана к этому нику,
+	// под Player530 акты не срабатывают и тестировать сюжет невозможно.
+	runs {
+		client {
+			programArgs "--username", "legoman"
+		}
+	}
+
 	mods {
 		"animod" {
 			sourceSet sourceSets.main

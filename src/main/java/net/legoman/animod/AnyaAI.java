@@ -1,6 +1,5 @@
 package net.legoman.animod;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerPlayer;
@@ -19,9 +18,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AnyaAI {
     private static final Logger LOGGER = LoggerFactory.getLogger("animod-ai");
-
-    // ПЕРЕКЛЮЧАТЕЛЬ МАРШРУТА АНИ
-    private static final boolean USE_AI_SERVER = true;
 
     private static String lastUniqueResponse = "";
     private static int lastResponseBand = -1;
@@ -169,8 +165,8 @@ public class AnyaAI {
                 LOGGER.error("[DIAGNOSTIC] Exception in async thread: {}", e.getMessage(), e);
                 player.serverLevel().getServer().execute(()->{
                     if(player.isRemoved()) return;
-                    String safe = KoboldClient.escapeJson(AnyaAIFallback.get(finalKarma,finalUserText,finalItemName,finalMobsInfo,finalTimeText,finalBiomeName,finalHealth,lastUniqueResponse));
-                    sendAnyaMessage(player, finalNameColorName, "white", AnyaAIFallback.get(finalKarma,finalUserText,finalItemName,finalMobsInfo,finalTimeText,finalBiomeName,finalHealth,lastUniqueResponse));
+                    String safe = AnyaAIFallback.get(finalKarma,finalUserText,finalItemName,finalMobsInfo,finalTimeText,finalBiomeName,finalHealth,lastUniqueResponse);
+                    sendAnyaMessage(player, finalNameColorName, "white", safe);
                 });
             }finally{
                 generating.set(false);
@@ -180,58 +176,17 @@ public class AnyaAI {
 
     private static String generateCandidate(String instruction, String time, String biome, float health, String item, String mobs, String userText, List<String> memory, List<String> history, String playerName, String worldId, int karma){
 
-        if (USE_AI_SERVER) {
-            LOGGER.info("[DIAGNOSTIC] Routing request to external Python AI Server...");
-            JsonObject gameContext = new JsonObject();
-            gameContext.addProperty("time", time);
-            gameContext.addProperty("biome", biome);
-            gameContext.addProperty("health", health);
-            gameContext.addProperty("item", item);
-            gameContext.addProperty("mobs", mobs);
+        // Единственный маршрут: внешний Python AI-сервер (облачная модель)
+        LOGGER.info("[DIAGNOSTIC] Routing request to external Python AI Server...");
+        JsonObject gameContext = new JsonObject();
+        gameContext.addProperty("time", time);
+        gameContext.addProperty("biome", biome);
+        gameContext.addProperty("health", health);
+        gameContext.addProperty("item", item);
+        gameContext.addProperty("mobs", mobs);
 
-            // Теперь мы передаем memory и history в Python-сервер
-            return AiServerClient.send(worldId, playerName, userText, karma, gameContext, memory, history);
-        } else {
-            LOGGER.info("[DIAGNOSTIC] Routing request to local KoboldCpp...");
-            String systemMessage = AnyaAIPrompts.buildSystemMessage(instruction, time, biome, health, item, mobs, lastUniqueResponse, lastResponseBand, memory);
-
-            JsonArray messages = new JsonArray();
-
-            JsonObject sysObj = new JsonObject();
-            sysObj.addProperty("role", "system");
-            sysObj.addProperty("content", systemMessage);
-            messages.add(sysObj);
-
-            int histLen = 0;
-            if(history != null && !history.isEmpty()){
-                for(String line : history){
-                    histLen += line.length();
-                    JsonObject msgObj = new JsonObject();
-                    if(line.startsWith("Игрок: ")){
-                        msgObj.addProperty("role", "user");
-                        msgObj.addProperty("content", line.substring(7).trim());
-                        messages.add(msgObj);
-                    } else if (line.startsWith("Аня: ")){
-                        msgObj.addProperty("role", "assistant");
-                        msgObj.addProperty("content", line.substring(5).trim());
-                        messages.add(msgObj);
-                    }
-                }
-            }
-
-            JsonObject currentUser = new JsonObject();
-            currentUser.addProperty("role", "user");
-            currentUser.addProperty("content", userText);
-            messages.add(currentUser);
-
-            int sysLen = systemMessage.length();
-            int usrLen = userText.length();
-            int estTokens = (sysLen + histLen + usrLen) / 4;
-            LOGGER.info("[DIAGNOSTIC] Запрос сформирован. Примерно токенов: ~{}. (System: {} симв, History: {} симв, User: {} симв)", estTokens, sysLen, histLen, usrLen);
-
-            float temperature = 0.56f;
-            return KoboldClient.send(messages, temperature);
-        }
+        // Теперь мы передаем memory и history в Python-сервер
+        return AiServerClient.send(worldId, playerName, userText, karma, gameContext, memory, history);
     }
 
     private static boolean isInvalid(String response, String userText, int band) {
@@ -265,9 +220,24 @@ public class AnyaAI {
 
     private static void sendAnyaMessage(ServerPlayer player, String nameColorName, String textColorName, String text) {
         if (player.isRemoved()) return;
+        String safeText = text;
+        // Акты 5-6: чат «ломается» — кракозябры, пока ядро не починено кодом
+        try {
+            AniSaveData data = AniSaveData.getServerState(player.serverLevel());
+            int act = net.legoman.animod.story.StoryManager.actIndexForDay(data.storyDay);
+            if (!data.chatCoreFixed && act >= 5 && act <= 6) {
+                StringBuilder corrupted = new StringBuilder();
+                String glitch = "▓▒░#@%&$*!";
+                Random rnd = new Random();
+                for (int i = 0; i < safeText.length(); i++) {
+                    corrupted.append(rnd.nextInt(9) == 0 ? glitch.charAt(rnd.nextInt(glitch.length())) : safeText.charAt(i));
+                }
+                safeText = corrupted.toString();
+            }
+        } catch (Exception ignored) {}
         player.sendSystemMessage(
             Component.literal("[\u0410\u043D\u044F] ").withStyle(getChatColor(nameColorName))
-                .append(Component.literal(text).withStyle(getChatColor(textColorName)))
+                .append(Component.literal(safeText).withStyle(getChatColor(textColorName)))
         );
     }
 

@@ -1,12 +1,16 @@
 package net.legoman.animod;
 
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 import java.util.List;
 import java.util.Map;
@@ -20,17 +24,21 @@ import java.util.Random;
  * the quest being completed (+reward) or expiring after one quest-day (−penalty),
  * followed by a fixed 2 day pause before Anya offers the next quest.
  *
- * Tiers follow player-specified difficulty with 65% / 30% / 7% odds:
+ * Tiers follow the story canon (диздок, Часть 4):
+ *   Акт 1: только Т1/Т2.
+ *   Акт 2+: Т3 = 7% и растёт на +3% за каждый следующий акт; Т1/Т2 делят остаток как 65:30.
  *   Tier 1: early blocks (dirt, gravel, rare sand), coal, copper ore.
  *   Tier 2: tools/misc items (bucket, shield, shears, furnace, chest, torches),
  *           stone tools, rare iron items.
- *   Tier 3: iron armor/tools, crossbow, rare diamond gear (~10% combined).
+ *   Tier 3: iron armor/tools, crossbow, rare diamond gear. The FIRST T3 in a world is
+ *           always diamond; after one diamond T3 is completed, odds are 70% iron / 30% diamond.
  *
  * Each quest carries a weight; items marked "rare" have a lower weight so they
  * appear less often within their tier. When offering, a weighted random pick is
  * done among that tier's items.
  *
- * On completion the player also receives a random material reward:
+ * On completion the player also receives a random material reward, but ONLY for a
+ * successfully completed diamond Tier-3 quest:
  *   emeralds (3–5), bottles o' enchanting (8–10) or gold ingots (4–8).
  * A future story quest item is reserved as a second reward (not yet in the game).
  */
@@ -44,8 +52,9 @@ public final class QuestManager {
     // reward below will start granting it automatically.
     private static final String STORY_ITEM_ID = null;
 
-    // Share of the diamond Tier-3 offer boosted to on the very first time a diamond T3 is offered in this world.
-    private static final double BOOST_DIAMOND_PROBABILITY = 0.30;
+    // Канон (Часть 4): пока алмазная Т3 не сдана — первый Т3 в мире 100% алмаз (железо исключено).
+    // После первой сданной алмазной Т3 внутри тира Т3: 70% железо / 30% алмазы.
+    private static final double POST_FIRST_DIAMOND_SHARE = 0.30;
 
     private record Quest(String item, int minTarget, int maxTarget, int tier, int weight) {}
 
@@ -211,9 +220,16 @@ public final class QuestManager {
         // Reserved (future) story item, granted regardless of tier.
         grantStoryItem(player, data, itemName);
 
-        // Remember the first-ever diamond Tier-3 completion: this world's odds drop back to ~10%.
+        // Remember the first-ever diamond Tier-3 completion: afterwards T3 stays 70% iron / 30% diamond.
         if (data.questTier == 3 && isDiamond(data.questItem)) {
             data.diamondT3Completed = true;
+            // Канон (Акт X.5): за сдачу алмазной Т3 выдаётся сюжетный предмет — Кулон разбитого кода.
+            if (!data.storyPendantGiven) {
+                data.storyPendantGiven = true;
+                data.pendantAct = data.currentAct;
+                givePendant(player);
+                AnyaAI.addMemoryFact("Игрок сдал алмазный Т3 квест и получил Кулон разбитого кода — осколок моей памяти.", null);
+            }
         }
 
         data.questItem = "";
@@ -248,6 +264,21 @@ public final class QuestManager {
         }
     }
 
+    /** Кулон разбитого кода (Акт X.5): ванильный осколок аметиста с сюжетным именем и лором. */
+    public static void givePendant(ServerPlayer player) {
+        ItemStack pendant = new ItemStack(Items.AMETHYST_SHARD);
+        pendant.setHoverName(Component.literal("§bКулон разбитого кода"));
+        CompoundTag display = pendant.getOrCreateTagElement("display");
+        ListTag lore = new ListTag();
+        lore.add(StringTag.valueOf(Component.Serializer.toJson(Component.literal("§8Осколок памяти — того, что было разбито при создании Ани."))));
+        lore.add(StringTag.valueOf(Component.Serializer.toJson(Component.literal("§8Что-то просыпается на дне мира..."))));
+        display.put("Lore", lore);
+        if (!player.getInventory().add(pendant)) {
+            player.drop(pendant, false);
+        }
+        player.sendSystemMessage(Component.literal("§b[Аня] ...Это часть меня. Храни его. Пожалуйста."));
+    }
+
     /** Adds the stack to the player's inventory, or drops it at their feet if the inventory is full. */
     private static void giveOrDrop(ServerPlayer player, Item item, int amount) {
         if (!player.getInventory().add(new ItemStack(item, amount))) {
@@ -258,6 +289,15 @@ public final class QuestManager {
     /** Quest not done within one quest-day: apply the failure penalty and start the pause. */
     private static void applyPenalty(ServerPlayer player, AniSaveData data) {
         if (data.questItem.isEmpty()) return;
+        // Игрок оффлайн — просто закрываем квест без штрафа (наказывать не за что, а NPE ронял тик)
+        if (player == null) {
+            data.questItem = "";
+            data.questTarget = 0; data.questProgress = 0; data.questTier = 0; data.questBaseline = 0;
+            data.questDaysLeft = 0;
+            scheduleGap(data);
+            data.setDirty();
+            return;
+        }
         int penalty = penaltyFor(data);
         KarmaManager.set(Math.max(0, KarmaManager.get() - penalty));
         String itemName = itemLocalName(data.questItem);
@@ -315,7 +355,13 @@ public final class QuestManager {
 
     private static void offerRandom(ServerPlayer player, AniSaveData data, long day) {
         double roll = RANDOM.nextDouble();
-        int tier = roll < 0.65 ? 1 : roll < 0.93 ? 2 : 3;
+        // Канон (Часть 4): шанс Т3 = 7% во 2 акте и растёт на +3% с каждым следующим актом.
+        // В АКТЕ 1 канонных Т3 нет вообще (только Т1/Т2). Т1 и Т2 делят остаток как 65:30.
+        int act = data.currentAct;
+        double t3 = act <= 1 ? 0.0 : t3Chance(data);
+        double t1 = 0.65 * (1.0 - t3) / 0.95;
+        double t2 = 0.30 * (1.0 - t3) / 0.95;
+        int tier = roll < t1 ? 1 : roll < t1 + t2 ? 2 : 3;
         List<Quest> choices = QUESTS.stream().filter(q -> q.tier == tier).toList();
         if (choices.isEmpty()) return;
         data.questDaysLeft = 1; // must be done within one quest-day
@@ -324,10 +370,27 @@ public final class QuestManager {
         setQuest(data, player, pickWeighted(choices, tier == 3 && !data.diamondT3Completed), tier);
     }
 
+    /** Канон: Т3 = 7% в Акте 2, +3% за каждый следующий акт (по сетке дней сюжета). */
+    private static double t3Chance(AniSaveData data) {
+        int act = data.currentAct;
+        return Math.min(0.40, 0.07 + 0.03 * Math.max(0, act - 2));
+    }
+
     /** Weighted random pick so "rare" items (low weight) appear less often in their tier.
-        On the very first diamond Tier-3 offer in this world, diamond items are boosted to
-        30%, with the rest shared among the other Tier-3 items proportionally. */
-		private static Quest pickWeighted(List<Quest> choices, boolean boostDiamondT3) {
+        Канон (Часть 4): пока алмазная Т3 не сдана (firstDiamondT3 == true) — железный Т3
+        исключён, выпадает 100% алмазный квест. После первой сданной алмазной Т3 — 70% железо / 30% алмазы. */
+		private static Quest pickWeighted(List<Quest> choices, boolean firstDiamondT3) {
+		if (firstDiamondT3 && hasDiamond(choices)) {
+			// Первый Т3 в мире: только алмазные квесты, железо вычеркнуто.
+			List<Quest> diamonds = new java.util.ArrayList<>();
+			for (Quest q : choices) if (isDiamond(q.item)) diamonds.add(q);
+			int total = 0;
+			for (Quest q2 : diamonds) total += q2.weight;
+			int roll = RANDOM.nextInt(total);
+			int acc = 0;
+			for (Quest q : diamonds) { acc += q.weight; if (roll < acc) return q; }
+			return diamonds.get(diamonds.size() - 1);
+		}
 		if (!hasDiamond(choices)) {
 			// T1/T2 contain no diamonds: plain weighted pick by item weight.
 			int total = 0;
@@ -337,10 +400,8 @@ public final class QuestManager {
 			for (Quest q : choices) { acc += q.weight; if (roll < acc) return q; }
 			return choices.get(choices.size() - 1);
 		}
-		// T3 (contains diamonds): diamond vs iron split. On the very first diamond T3
-		// offer in this world diamonds are boosted to 30% (iron 70%); after the player has
-		// completed a diamond T3 they drop to 10% (iron 90%). Shares split by weights.
-		double diamondTarget = boostDiamondT3 ? BOOST_DIAMOND_PROBABILITY : 0.10;
+		// T3 после первой сданной алмазной Т3: канон 70% железо / 30% алмазы (доли внутри групп — по весам).
+		double diamondTarget = POST_FIRST_DIAMOND_SHARE;
 		int diamonds = 0;
 		int others = 0;
 		for (Quest q : choices) {
@@ -381,7 +442,7 @@ private static boolean hasDiamond(List<Quest> choices) {
         data.questProgress = 0;
         data.setDirty();
         String request = REQUESTS[RANDOM.nextInt(REQUESTS.length)];
-        player.sendSystemMessage(Component.literal("§d[Аня] Legoman, " +
+        player.sendSystemMessage(Component.literal("§d[Аня] " + player.getName().getString() + ", " +
                 String.format(request, target, itemLocalName(quest.item)) + "."));
         // New line: just the tier label (Т1 / Т2 / Т3), no extra words.
         player.sendSystemMessage(Component.literal("§e[Т" + tier + "]"));
@@ -435,8 +496,6 @@ private static boolean hasDiamond(List<Quest> choices) {
     }
 
     private static ServerPlayer findQuestPlayer(MinecraftServer server) {
-        for (ServerPlayer player : server.getPlayerList().getPlayers())
-            if (player.getName().getString().equalsIgnoreCase("legoman")) return player;
-        return null;
+        return net.legoman.animod.story.StoryPlayers.get(server);
     }
 }

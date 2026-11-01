@@ -3,12 +3,14 @@
 	"package": "net.legoman.animod.client.mixin",
 	"compatibilityLevel": "JAVA_17",
 	"client": [
-		"ExampleClientMixin",
+
 		"AbstractClientPlayerMixin",
 		"GameRendererAccessor",
 		"MouseHandlerMixin",
 		"ClientLevelMixin",
-		"LevelRendererMixin"
+		"LevelRendererMixin",
+		"SoundEngineMixin",
+		"ChatHudMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
